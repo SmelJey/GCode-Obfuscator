@@ -10,6 +10,7 @@ class CppObfuscator {
                             "int32_t", "int64_t", "size_t")
     private val style : String
     private val rnd : Random
+    private val busyPseudonyms = mutableSetOf<String>()
 
     init {
         maxPseudonymName = 10
@@ -26,31 +27,39 @@ class CppObfuscator {
         return pseudonym
     }
 
-    private fun generatePseudonyms() : MutableMap<String, String> {
+    private fun generatePseudonyms(keys : List<String>) : MutableMap<String, String> {
         val allPseudonyms = mutableMapOf<String, String>()
-        val pseudonyms = mutableSetOf<String>()
-        typeNames.forEach {
+
+        keys.forEach {
             var pseudonym = getPseudonym()
-            while (pseudonyms.contains(pseudonym))
+            while (busyPseudonyms.contains(pseudonym))
                 pseudonym = getPseudonym()
             allPseudonyms[it] = pseudonym
-            pseudonyms.add(pseudonym)
+            busyPseudonyms.add(pseudonym)
         }
 
         return allPseudonyms
     }
 
-    private fun parse(scanner: Scanner) : Pair<MutableList<String>, Int> {
+    private fun parse(scanner: Scanner) : Triple<Int, MutableList<String>, MutableList<String>> {
         val words = mutableListOf<String>()
+        val varList = mutableListOf<String>()
         var defOff = 0
         var flag = false
+
         while (scanner.hasNext()) {
             val nextLine = scanner.nextLine()
             if (nextLine.isNotEmpty() && nextLine[0] != '#'){
                 flag = true
                 val lineScanner = Scanner(nextLine)
                 while (lineScanner.hasNext()) {
-                    words.add(lineScanner.next())
+                    val curWord = lineScanner.next()
+                    if (words.isNotEmpty() && typeNames.contains(words.last())
+                            && Regex("[A-Za-z0-9;,]+").matches(curWord)) {
+                        varList.add(Regex("[A-Za-z0-9]+").find(curWord)!!.value)
+                    }
+
+                    words.add(curWord)
                 }
 
                 lineScanner.close()
@@ -61,12 +70,17 @@ class CppObfuscator {
             }
         }
 
-        return Pair(words, defOff)
+        return Triple(defOff, words, varList)
     }
 
     private fun write(writer: BufferedWriter, words: List<String>, defOffset: Int, pseudonyms: Map<String, String>) {
         var flag = false
         var offset = 0
+
+        writer.write("// Obfuscated using GCode-Obfuscator by SmelJey")
+        writer.newLine()
+        writer.write("// Github: https://github.com/SmelJey/GCode-Obfuscator")
+        writer.newLine()
 
         words.forEach { word ->
             if (offset == defOffset) {
@@ -100,21 +114,33 @@ class CppObfuscator {
     }
 
     fun obfuscate(file: File) {
+        busyPseudonyms.clear()
         val scanner = Scanner(file)
         val words = parse(scanner)
         scanner.close()
 
-        val pseudonyms = generatePseudonyms()
+        val pseudonyms = generatePseudonyms(typeNames)
+        val varPseudonyms = generatePseudonyms(words.third)
 
         typeNames.forEach {
             val pat = Regex("(?<!\\w)(" + it + ")(?!\\w)")
-            for (i in 0 until words.first.size){
-                words.first[i] = words.first[i].replace(pat, pseudonyms[it]!!)
+            for (i in 0 until words.second.size){
+                words.second[i] = words.second[i].replace(pat, pseudonyms[it]!!)
+            }
+        }
+
+        words.third.forEach {
+            val pat = Regex("(?<=[\\s(\\[,;.&+\\-*/=^])(" + it
+                    + ")(?=[\\s(\\[,;.&+\\-*/=^])|(^(" + it
+                    + ")(?=[\\s(\\[,;.&+\\-*/=^]))|(?<=[\\s(\\[,;.&+\\-*/=^])(" + it
+                    + ")$|^(" + it + ")$")
+            for (i in 0 until words.second.size){
+                words.second[i] = words.second[i].replace(pat, varPseudonyms[it]!!)
             }
         }
 
         val writer = BufferedWriter(FileWriter(File("output.cpp")))
-        write(writer, words.first, words.second, pseudonyms)
+        write(writer, words.second, words.first, pseudonyms)
         writer.close()
     }
 }
