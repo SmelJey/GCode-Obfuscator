@@ -3,20 +3,13 @@ import java.io.File
 import java.io.FileWriter
 import java.util.*
 
-class CppObfuscator {
-    private val maxPseudonymName : Int
+class CppObfuscator(private val style: String = "oOcC") {
+    private val maxPseudonymName : Int = 10
     private val typeNames = listOf("char", "int",
                            "float", "double", "string", "bool",
                             "int32_t", "int64_t", "size_t")
-    private val style : String
-    private val rnd : Random
+    private val rnd : Random = Random()
     private val busyPseudonyms = mutableSetOf<String>()
-
-    init {
-        maxPseudonymName = 10
-        style = "oOcC"
-        rnd = Random()
-    }
 
     private fun getPseudonym() : String {
         var pseudonym = ""
@@ -113,7 +106,7 @@ class CppObfuscator {
         writer.newLine()
     }
 
-    fun obfuscate(file: File) {
+    fun obfuscate(file: File, out: File = File("output.cpp")) {
         busyPseudonyms.clear()
         val scanner = Scanner(file)
         val words = parse(scanner)
@@ -139,7 +132,7 @@ class CppObfuscator {
             }
         }
 
-        val writer = BufferedWriter(FileWriter(File("output.cpp")))
+        val writer = BufferedWriter(FileWriter(out))
         write(writer, words.second, words.first, pseudonyms)
         writer.close()
     }
